@@ -19,13 +19,7 @@ using namespace std;
 // ============================================================
 class defFunction {
 public:
-    // БЫЛО: virtual vector<double> operator()(double x, vector<double>&u) = 0;
-    //       virtual int razmernost() = 0;
-    // СТАЛО: добавили virtual ~defFunction() = default;
-    // ПОЧЕМУ: без виртуального деструктора удаление через указатель на базу — UB.
-    //         Для лабы не критично, но правильно.
     virtual ~defFunction() = default;
-
     virtual vector<double> operator()(double x, vector<double>& u) = 0;
     virtual int razmernost() = 0;
 };
@@ -37,12 +31,7 @@ public:
 class TestFunction : public defFunction {
     double value;
 public:
-    // БЫЛО: TestFunction(){ value = 1; }
-    // СТАЛО: explicit TestFunction(int variant = 2)
-    //            : value((variant % 2 ? -1.0 : 1.0) * variant / 2.0) {}
-    // ПОЧЕМУ: жёсткое value = 1 работает только для варианта 2.
-    //         Параметризация позволяет проверить любой вариант.
-    //         По умолчанию variant = 2 — чтобы старый код не сломался.
+
     explicit TestFunction(int variant = 2)
         : value((variant % 2 ? -1.0 : 1.0) * variant / 2.0) {}
 
@@ -65,17 +54,9 @@ public:
 class MainTask1 : public defFunction {
     function<double(double)> f_;
 
-// БЫЛО: конструктор и методы были без public: — класс по умолчанию private.
-// СТАЛО: добавили public:
-// ПОЧЕМУ: без этого MainTask1 нельзя создать снаружи — компилятор не даст
-//         вызвать конструктор, и объект не построится.
 public:
     explicit MainTask1(std::function<double(double)> f) : f_(std::move(f)) {}
 
-    // БЫЛО: int razmernost(){ return 1; }
-    // СТАЛО: int razmernost() override { return 1; }
-    // ПОЧЕМУ: override — страховка от опечатки в сигнатуре. Если базовый метод
-    //         изменится, компилятор сообщит, что override не найден.
     int razmernost() override {
         return 1;
     }
@@ -119,16 +100,16 @@ public:
 
         k1 = f(x, u);
 
-        for (std::size_t i = 0; i < n; ++i) tmp[i] = u[i] + 0.5 * h * k1[i];
+        for (size_t i = 0; i < n; ++i) tmp[i] = u[i] + 0.5 * h * k1[i];
         k2 = f(x + 0.5 * h, tmp);
 
-        for (std::size_t i = 0; i < n; ++i) tmp[i] = u[i] + 0.5 * h * k2[i];
+        for (size_t i = 0; i < n; ++i) tmp[i] = u[i] + 0.5 * h * k2[i];
         k3 = f(x + 0.5 * h, tmp);
 
-        for (std::size_t i = 0; i < n; ++i) tmp[i] = u[i] + h * k3[i];
+        for (size_t i = 0; i < n; ++i) tmp[i] = u[i] + h * k3[i];
         k4 = f(x + h, tmp);
 
-        for (std::size_t i = 0; i < n; ++i)
+        for (size_t i = 0; i < n; ++i)
             res[i] = u[i] + (h / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
 
         return res;
@@ -136,7 +117,7 @@ public:
 };
 
 // ============================================================
-// Параметры решателя
+// Параметры решателя задаваемые пользоваетелем 
 // ============================================================
 struct SolverConfig {
     double a    = 0.0;
@@ -158,33 +139,33 @@ struct SolverConfig {
 struct StepRecord {
     int    i    = 0;
     double x    = 0.0;
-    std::vector<double> v;
-    std::vector<double> v2;
-    std::vector<double> diff;
+    vector<double> v;
+    vector<double> v2;
+    vector<double> diff;
     double olp  = 0.0;
     double h    = 0.0;
     int    c1   = 0;
     int    c2   = 0;
-    std::vector<double> u_exact;
+    vector<double> u_exact;
 };
 
 // ============================================================
 // Статистика
 // ============================================================
 struct SolverStats {
-    int    n          = 0;
-    double b_minus_xn = 0.0;
-    double maxOlp     = 0.0;
-    double maxOlp_atX = 0.0;
-    double maxH       = 0.0;
-    double maxH_atX   = 0.0;
-    double minH       = 0.0;
+    int    n          = 0; //количество шагов 
+    double b_minus_xn = 0.0; // сколько нехватило до правой границы 
+    double maxOlp     = 0.0; // макс. значение олп 
+    double maxOlp_atX = 0.0; //в каком х достигли максОЛП
+    double maxH       = 0.0; //макс H 
+    double maxH_atX   = 0.0;// в каком x макс H
+    double minH       = 0.0; 
     double minH_atX   = 0.0;
-    int    totalC1    = 0;
-    int    totalC2    = 0;
-    bool   reachedB   = false;
-    bool   hitNmax    = false;
-    double maxExactErr    = 0.0;
+    int    totalC1    = 0; // сколько раз за шаг сделали olp > eps 
+    int    totalC2    = 0; // сколько раз за шаг сделали olp < eps / 32 
+    bool   reachedB   = false; // достигли правой границы
+    bool   hitNmax    = false; //пробили потолок по Nmax 
+    double maxExactErr    = 0.0; //макс разность между u_exact и v 
     double maxExactErr_atX = 0.0;
 };
 
@@ -203,28 +184,26 @@ class Solver {
     void finalizeStats() {
         stats_.n = static_cast<int>(table_.size()) - 1;
         stats_.b_minus_xn = cfg_.b - table_.back().x;
-        stats_.reachedB = std::abs(stats_.b_minus_xn) < 1e-9;
-
-        // БЫЛО: stats_.hitNmax = (stats_.n >= cfg_.Nmax);
-        // СТАЛО: stats_.hitNmax = stats_.hitNmax || (stats_.n >= cfg_.Nmax);
-        // ПОЧЕМУ: run() уже мог выставить hitNmax = true при break по Nmax.
-        //         Простое присваивание затирало флаг, если n < Nmax.
+        stats_.reachedB = abs(stats_.b_minus_xn) < 1e-9;
+        
         stats_.hitNmax = stats_.hitNmax || (stats_.n >= cfg_.Nmax);
 
         bool firstH = true;
         for (const auto& r : table_) {
             if (r.i == 0) continue;
-            if (r.olp > stats_.maxOlp) {
+            if (r.olp > stats_.maxOlp) { // считаем maxOLP для статистики 
                 stats_.maxOlp = r.olp;
                 stats_.maxOlp_atX = r.x;
             }
+            // считаем maxH для статистики 
             if (firstH || r.h > stats_.maxH) { stats_.maxH = r.h; stats_.maxH_atX = r.x; }
             if (firstH || r.h < stats_.minH) { stats_.minH = r.h; stats_.minH_atX = r.x; }
             firstH = false;
 
+            //считаем максимальную ошибку 
             if (!r.u_exact.empty() && !r.v.empty()) {
                 double e = 0.0;
-                for (std::size_t j = 0; j < r.v.size(); ++j)
+                for (size_t j = 0; j < r.v.size(); ++j)
                     e = std::max(e, std::abs(r.u_exact[j] - r.v[j]));
                 if (e > stats_.maxExactErr) {
                     stats_.maxExactErr = e;
@@ -232,11 +211,6 @@ class Solver {
                 }
             }
         }
-        // БЫЛО: stats_.totalC1 = 0;
-        //       stats_.totalC2 = 0;
-        // СТАЛО: эти строки удалены.
-        // ПОЧЕМУ: run() уже накапливает totalC1/totalC2 через +=.
-        //         Обнуление в конце затирало всю статистику.
     }
 
 public:
@@ -252,15 +226,11 @@ public:
         stats_ = SolverStats{};
 
         if (initial_.empty())
-            // БЫЛО: initial_.assign(f_.dimension(), 0.0);
-            // СТАЛО: initial_.assign(f_.razmernost(), 0.0);
-            // ПОЧЕМУ: в базовом классе метод называется razmernost(), а не dimension().
-            //         Компилятор не находил dimension() и падал с ошибкой.
             initial_.assign(f_.razmernost(), 0.0);
 
         double h = cfg_.h0;
         double x = cfg_.a;
-        std::vector<double> u = initial_;
+        vector<double> u = initial_;
         int i = 0;
 
         // ---------- начальная запись (i = 0) ----------
@@ -280,29 +250,57 @@ public:
         }
 
         // ---------- основной цикл по времени ----------
-        while (x < cfg_.b - 1e-15) {
-            if (i >= cfg_.Nmax) { stats_.hitNmax = true; break; }
+        while (x < cfg_.b - 1e-15) { // тут пиздуем пока не дойдем до
+                                     // правой границы 
+            if (i >= cfg_.Nmax) { stats_.hitNmax = true; break; } // проверяем что сделали н больше Nmax шагов 
 
             int c1 = 0;
             int c2 = 0;
 
+            //не совсем выкупаю эти 2 условия 
+            // типо первое для того чтобы если вышли за b, то поставим x в b(хз ваще зачем)
+            // а второе типо шаг занулился, но я хз когда такое возможно
             double hStep = h;
             if (x + hStep > cfg_.b) hStep = cfg_.b - x;
             if (hStep <= 0.0) break;
 
-            std::vector<double> v, v2, diff;
+            vector<double> v, v2, diff;
             double olp = 0.0;
 
+
+// Идея: мы не знаем точного решения, поэтому не можем посчитать реальную
+// локальную погрешность. Но можем получить ДВА численных приближения к
+// одному и тому же значению u(x + h):
+//
+//   v  — одним шагом h          (грубее)
+//   v2 — двумя шагами h/2       (точнее)
+//
+// По правилу Рунге для метода 4-го порядка:
+//       |u_точное - v| ≈ |v - v2| / (2^4 - 1) = |v - v2| / 15
+//
+// Эту величину называем ОЛП (оценка локальной погрешности).
+// Сравниваем её с допуском eps:
+//
+//   ОЛП >  eps       -> шаг ВЕЛИК: делим h пополам, пересчитываем (C1++)
+//   ОЛП <  eps / 32  -> шаг МАЛ:   принимаем, но следующий шаг удваиваем (C2++)
+//   иначе            -> шаг ХОРОШ: принимаем как есть
+//
+// Порог eps/32 (а не eps) нужен как гистерезис: иначе шаг будет "дрожать"
+// на каждом шаге — то удваиваться, то делиться.
+//
+// Если adaptive == false, внутренний цикл делает ровно один проход и выходит.
+// Это режим ПОСТОЯННОГО шага — шаг не меняется, C1 = C2 = 0.
             // ---------- подбор шага ----------
             while (true) {
                 if (x + hStep > cfg_.b) hStep = cfg_.b - x;
                 if (hStep <= 0.0) break;
 
-                v = RK4::step(f_, x, u, hStep);
+                v = RK4::step(f_, x, u, hStep);  // полный шаг 
 
-                std::vector<double> vh = RK4::step(f_, x, u, 0.5 * hStep);
-                v2 = RK4::step(f_, x + 0.5 * hStep, vh, 0.5 * hStep);
+                vector<double> vh = RK4::step(f_, x, u, 0.5 * hStep); // первый полушаг 
+                v2 = RK4::step(f_, x + 0.5 * hStep, vh, 0.5 * hStep); //второй полушаг 
 
+                // оценка локальной погрешности 
                 diff.resize(v.size());
                 double maxAbsDiff = 0.0;
                 for (std::size_t j = 0; j < v.size(); ++j) {
@@ -318,8 +316,8 @@ public:
                 //         Формула та же: S = |V - Ṽ| / (2^p - 1).
                 olp = maxAbsDiff / 15.0;
 
-                if (!cfg_.adaptive) break;
-
+                if (!cfg_.adaptive) break; //если брек, то шаг - постоянный 
+                // адаптивный шаг
                 if (olp > cfg_.eps) {
                     hStep *= 0.5;
                     c1++;
@@ -366,8 +364,91 @@ public:
     const std::vector<StepRecord>& table() const { return table_; }
     const SolverStats& stats() const { return stats_; }
 
-// БЫЛО: } (без точки с запятой)
-// СТАЛО: };
-// ПОЧЕМУ: класс в C++ заканчивается точкой с запятой.
-//         Без неё — ошибка компиляции "expected ';' after class definition".
+};
+
+class CsvWriter {
+public:
+    // Таблица тестовой задачи: с колонкой ui (точное решение)
+    static void writeTestTable(const std::string& path,
+                               const std::vector<StepRecord>& rows)
+    {
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("Не удалось открыть файл: " + path);
+
+        out << std::setprecision(10);
+        out << "i;xi;vi;v2i;vi-v2i;OLP;hi;C1;C2;ui\n";
+
+        for (const auto& r : rows) {
+            if (r.v.size() != 1) {
+                throw std::runtime_error(
+                    "writeTestTable: ожидается скалярная задача (v.size()==1)");
+            }
+            out << r.i << ';'
+                << r.x << ';'
+                << r.v[0] << ';'
+                << r.v2[0] << ';'
+                << r.diff[0] << ';'
+                << r.olp << ';'
+                << r.h << ';'
+                << r.c1 << ';'
+                << r.c2 << ';';
+            if (!r.u_exact.empty()) out << r.u_exact[0];
+            out << '\n';
+        }
+    }
+
+    // Таблица основной задачи: без ui; для системы — с колонками u и u'
+    static void writeMainTable(const std::string& path,
+                               const std::vector<StepRecord>& rows)
+    {
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("Не удалось открыть файл: " + path);
+
+        out << std::setprecision(10);
+
+        const bool isSystem = !rows.empty() && rows[0].v.size() > 1;
+
+        out << "i;xi;vi;v2i;vi-v2i;OLP;hi;C1;C2";
+        if (isSystem) out << ";u;u'";
+        out << '\n';
+
+        for (const auto& r : rows) {
+            out << r.i << ';'
+                << r.x << ';'
+                << r.v[0] << ';'
+                << r.v2[0] << ';'
+                << r.diff[0] << ';'
+                << r.olp << ';'
+                << r.h << ';'
+                << r.c1 << ';'
+                << r.c2;
+            if (isSystem) out << ';' << r.v[0] << ';' << r.v[1];
+            out << '\n';
+        }
+    }
+
+    // Сводка. withExact = true — печатать строку про max|u-v|
+    static void writeStats(const std::string& path,
+                           const SolverStats& s,
+                           bool withExact = false)
+    {
+        std::ofstream out(path);
+        if (!out) throw std::runtime_error("Не удалось открыть файл: " + path);
+
+        out << std::setprecision(10);
+        out << "n = " << s.n << '\n';
+        out << "b - x_n = " << s.b_minus_xn << '\n';
+        out << "max |OLP| = " << s.maxOlp
+            << " at x = " << s.maxOlp_atX << '\n';
+        out << "total C1 (delenij)  = " << s.totalC1 << '\n';
+        out << "total C2 (udvoenij) = " << s.totalC2 << '\n';
+        out << "max h_i = " << s.maxH << " at x = " << s.maxH_atX << '\n';
+        out << "min h_i = " << s.minH << " at x = " << s.minH_atX << '\n';
+        out << "reached b: " << (s.reachedB ? "yes" : "no") << '\n';
+        out << "hit Nmax:  " << (s.hitNmax  ? "yes" : "no") << '\n';
+        if (withExact) {
+            out << "max |u_i - v_i| = " << s.maxExactErr
+                << " at x = " << s.maxExactErr_atX << '\n';
+        }
+    }
 };
