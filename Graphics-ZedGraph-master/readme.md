@@ -1,4 +1,4 @@
-#Гайд 
+# Гайд 
 ```bash 
 g++ -std=c++17 -O2 -Iinclude -o myClass src/myClass.cpp
 
